@@ -16,6 +16,8 @@ import torch.nn as nn
 import torch.optim as optim
 from utility import Datasets
 import models
+import time
+
 
 def setup_seed(seed=2306):
     print(f"seed: {seed}")
@@ -157,6 +159,16 @@ def main():
     
     model = model.to(device)
 
+    def get_model_parameters(model):
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel()
+                               for p in model.parameters() if p.requires_grad)
+        return total_params, trainable_params
+
+    total_params, trainable_params = get_model_parameters(model)
+    print(f"Total parameters: {total_params}")
+    print(f"Trainable parameters: {trainable_params}")
+
     with open(log_path, "a") as log:
         log.write(f"{conf}\n")
         print(conf)
@@ -172,6 +184,7 @@ def main():
     num_epoch = conf['epochs'] if conf['epoch'] == -1 else conf["epoch"]
 
     for epoch in range(num_epoch):
+        start_time_epoch = time.time()
         epoch_anchor = epoch * batch_cnt
         model.train(True)
         pbar = tqdm(enumerate(dataset.train_loader),
@@ -199,12 +212,24 @@ def main():
                                      "%s: %.5f" % (l, losses[l].detach()) for l in losses
                                  ]))
 
-            if (batch_anchor+1) % test_interval_bs == 0:
+        time_train_epoch = time.time() - start_time_epoch
+        print(f'time train epoch {epoch}: {time_train_epoch:.2f}s')
+
+
+        if (batch_anchor+1) % test_interval_bs == 0:
                 metrics = {}
+                val_start_time = time.time()
                 metrics["val"] = test(model, dataset.val_loader, conf)
+                time_val = time.time() - val_start_time
+                print(f'time val epoch {epoch}: {time_val:.3f}s')
+
+                test_start_time = time.time()
                 metrics["test"] = test(model, dataset.test_loader, conf)
+                time_test = time.time() - test_start_time
+                print(f'time test epoch {epoch}: {time_test:.3f}s')
+
                 best_metrics, best_perform, best_epoch, is_better = log_metrics(
-                    conf, model, metrics, run, log_path, checkpoint_model_path, checkpoint_conf_path, epoch, batch_anchor, best_metrics, best_perform, best_epoch)
+                    conf, model, metrics, run, log_path, checkpoint_model_path, checkpoint_conf_path, epoch, batch_anchor, best_metrics, best_perform, best_epoch)  
         
         for l in avg_losses:
             run.add_scalar(l, np.mean(avg_losses[l]), epoch)
